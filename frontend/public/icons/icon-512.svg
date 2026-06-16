@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#34241A"/>
+  <text x="256" y="300" font-family="system-ui, sans-serif" font-size="200" font-weight="bold" fill="#E2A23B" text-anchor="middle">B</text>
+  <text x="256" y="380" font-family="system-ui, sans-serif" font-size="56" font-weight="600" fill="#E2A23B" text-anchor="middle">BOOK</text>
+</svg>

@@ -1,0 +1,9 @@
+
+> bar-book-backend@1.0.0 predev
+> kill $(lsof -t -i:5000) 2>/dev/null; exit 0
+
+
+> bar-book-backend@1.0.0 dev
+> ts-node src/index.ts
+
+Server is running on port 5000

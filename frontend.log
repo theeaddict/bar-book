@@ -1,0 +1,57 @@
+
+> bar-book@1.0.0 dev
+> next dev
+
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+> [PWA] PWA support is disabled
+> [PWA] PWA support is disabled
+ ✓ Ready in 18.2s
+ ○ Compiling / ...
+ ✓ Compiled / in 17.8s (601 modules)
+ GET / 200 in 19031ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /login in 24.8s (596 modules)
+ GET /_next/app-build-manifest.json 404 in 25441ms
+ GET /login/ 200 in 24463ms
+ GET /_next/app-build-manifest.json 404 in 89ms
+ ○ Compiling /users ...
+ ✓ Compiled /users in 801ms (602 modules)
+ GET /login/ 200 in 204ms
+ GET /_next/app-build-manifest.json 404 in 89ms
+ GET /login/ 200 in 127ms
+ GET /_next/app-build-manifest.json 404 in 70ms
+ GET /login/ 200 in 77ms
+ GET /_next/app-build-manifest.json 404 in 62ms
+ HEAD / 200 in 190ms
+ ○ Compiling /products ...
+ ✓ Compiled /products in 2.1s (608 modules)
+ GET /login/ 200 in 377ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 798ms (611 modules)
+ GET /_next/app-build-manifest.json 404 in 1262ms
+ GET /login/ 200 in 227ms
+ GET /_next/app-build-manifest.json 404 in 74ms
+ GET /login/ 200 in 100ms
+ GET /_next/app-build-manifest.json 404 in 78ms
+ ○ Compiling /balance ...
+ ✓ Compiled /balance in 4.2s (636 modules)
+ GET /login/ 200 in 94ms
+ GET /_next/app-build-manifest.json 404 in 85ms
+ ✓ Compiled in 5.6s (633 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /login/ 200 in 1050ms
+ ○ Compiling /_not-found ...
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled /_not-found in 2s (622 modules)
+ GET /_next/app-build-manifest.json 404 in 2855ms
+ GET /login/ 200 in 1106ms
+ ✓ Compiled in 2.7s (636 modules)
+ GET /_next/app-build-manifest.json 404 in 700ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /login/ 200 in 941ms
+ GET /_next/app-build-manifest.json 404 in 107ms
+[?25h
