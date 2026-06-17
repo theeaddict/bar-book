@@ -66,28 +66,56 @@ router.get('/state', async (req, res, next) => {
             for (const dp of dayProducts) {
                 dayProductMap.set(dp.product_id, dp);
             }
-            // Fetch carry-forward stock from last closed day
-            const { rows: lastClosedDateRows } = await client.query(`SELECT date::text AS date FROM day_kegs 
-         WHERE tenant_id = $1 AND date < $2 AND closing IS NOT NULL AND (skipped_reason IS NULL OR skipped_reason = '')
-         ORDER BY date DESC LIMIT 1`, [tenantId, date]);
+            // Fetch all day products before date in chronological order
+            const { rows: priorProducts } = await client.query(`SELECT dp.date::text AS date, dp.product_id, dp.opening::float AS opening, dp.added::float AS added, dp.left_count::float AS left_count, dp.buy_price, dp.sell_price,
+                dk.skipped_reason
+         FROM day_products dp
+         LEFT JOIN day_kegs dk ON dp.tenant_id = dk.tenant_id AND dp.date = dk.date
+         WHERE dp.tenant_id = $1 AND dp.date < $2
+         ORDER BY dp.date ASC`, [tenantId, date]);
+            const yesterdayProductsMap = new Map();
+            const productBuyPrices = new Map();
+            const productSellPrices = new Map();
+            for (const row of priorProducts) {
+                const pId = row.product_id;
+                let carryVal = yesterdayProductsMap.get(pId) || 0;
+                if (row.skipped_reason) {
+                    // remains unchanged
+                }
+                else if (row.left_count !== null && row.left_count !== undefined) {
+                    carryVal = Number(row.left_count);
+                }
+                else {
+                    carryVal = Number(row.opening || 0) + Number(row.added || 0);
+                }
+                yesterdayProductsMap.set(pId, carryVal);
+                if (row.buy_price)
+                    productBuyPrices.set(pId, Number(row.buy_price));
+                if (row.sell_price)
+                    productSellPrices.set(pId, Number(row.sell_price));
+            }
+            // Fetch all day kegs before date in chronological order
+            const { rows: priorKegs } = await client.query(`SELECT date::text AS date, opening::float AS opening, added::float AS added, closing::float AS closing, buy_price, sell_price, skipped_reason
+         FROM day_kegs
+         WHERE tenant_id = $1 AND date < $2
+         ORDER BY date ASC`, [tenantId, date]);
             let carryKegOpening = 0;
             let carryKegBuyPrice = 0;
             let carryKegSellPrice = 0;
-            const yesterdayProductsMap = new Map();
-            if (lastClosedDateRows.length > 0) {
-                const lastClosedDate = lastClosedDateRows[0].date;
-                const { rows: yesterdayProducts } = await client.query('SELECT product_id, left_count::float AS left_count FROM day_products WHERE tenant_id = $1 AND date = $2', [tenantId, lastClosedDate]);
-                for (const yp of yesterdayProducts) {
-                    if (yp.left_count !== null) {
-                        yesterdayProductsMap.set(yp.product_id, yp.left_count);
-                    }
+            for (const row of priorKegs) {
+                if (row.skipped_reason) {
+                    // remains unchanged
                 }
-                const { rows: yesterdayKegRows } = await client.query('SELECT closing::float AS closing, buy_price, sell_price FROM day_kegs WHERE tenant_id = $1 AND date = $2', [tenantId, lastClosedDate]);
-                if (yesterdayKegRows.length > 0) {
-                    carryKegOpening = yesterdayKegRows[0].closing || 0;
-                    carryKegBuyPrice = yesterdayKegRows[0].buy_price || 0;
-                    carryKegSellPrice = yesterdayKegRows[0].sell_price || 0;
+                else if (row.closing !== null && row.closing !== undefined) {
+                    carryKegOpening = Number(row.closing);
                 }
+                else {
+                    carryKegOpening = Number(row.opening || 0) + Number(row.added || 0);
+                }
+                if (row.buy_price)
+                    carryKegBuyPrice = Number(row.buy_price);
+                if (row.sell_price)
+                    carryKegSellPrice = Number(row.sell_price);
             }
             // Merge ALL catalog products with day_products data (carry-forward previous closing stock)
             const resultProducts = products.map((p) => {
@@ -104,8 +132,8 @@ router.get('/state', async (req, res, next) => {
                     opening: carryOpening,
                     added: 0,
                     left_count: null,
-                    buy_price: p.buy_price,
-                    sell_price: p.sell_price,
+                    buy_price: productBuyPrices.get(p.id) || p.buy_price,
+                    sell_price: productSellPrices.get(p.id) || p.sell_price,
                 };
             });
             // Ensure keg data exists
@@ -127,21 +155,15 @@ router.get('/state', async (req, res, next) => {
                 // Force opening to always match carry-forward
                 resultKeg = { ...resultKeg, opening: carryKegOpening };
             }
-            // Check if previous day is resolved (either has a closing balance or a skipped reason)
             const yesterdayStr = getYesterdayDateString(date);
-            const { rows: priorRows } = await client.query('SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date < $2 LIMIT 1', [tenantId, date]);
-            const hasPriorDays = priorRows.length > 0;
-            let isPreviousDayResolved = true;
-            if (hasPriorDays) {
-                const { rows: yesterdayRows } = await client.query(`SELECT 1 FROM day_kegs 
-           WHERE tenant_id = $1 AND date = $2 
-             AND (closing IS NOT NULL OR skipped_reason IS NOT NULL)`, [tenantId, yesterdayStr]);
-                isPreviousDayResolved = yesterdayRows.length > 0;
-            }
+            // Disable skipping day restrictions and historical locks
+            const isPreviousDayResolved = true;
+            const isHistorical = false;
             return {
                 products: resultProducts,
                 keg: resultKeg,
                 isPreviousDayResolved,
+                isHistorical,
                 previousDate: yesterdayStr
             };
         });
@@ -160,6 +182,14 @@ router.post('/stock', async (req, res, next) => {
         }
         const { date, products, keg } = SaveStockSchema.parse(req.body);
         await (0, db_1.withTenant)(tenantId, async (client) => {
+            // Prevent adding stock to historical days check bypassed
+            // const { rows: newerRows } = await client.query(
+            //   'SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date > $2 LIMIT 1',
+            //   [tenantId, date]
+            // );
+            // if (newerRows.length > 0) {
+            //   throw new Error(`Cannot add stock for ${date} because a newer day already exists. Editing past stock destroys the carry-forward cycle.`);
+            // }
             // 1. Save day products
             for (const p of products) {
                 await client.query(`INSERT INTO day_products (tenant_id, date, product_id, opening, added, left_count, buy_price, sell_price)
@@ -191,6 +221,10 @@ router.post('/balance', async (req, res, next) => {
             return res.status(400).json({ error: 'x-tenant-id header is required' });
         }
         const { date, products, keg, totalCollected } = CloseDaySchema.parse(req.body);
+        await (0, db_1.withTenant)(tenantId, async (client) => {
+            // const { rows: newerRows } = await client.query('SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date > $2 LIMIT 1', [tenantId, date]);
+            // if (newerRows.length > 0) throw new Error(`Cannot modify sales for ${date} because a newer day already exists.`);
+        });
         // Backend Validation: You cannot sell what you do not have
         for (const p of products) {
             const totalAvailable = p.opening + p.added;
@@ -233,7 +267,7 @@ router.post('/balance', async (req, res, next) => {
             // The business expects the Net Handover to cover the expected sales.
             const expenses = keg.expenses || 0;
             const netHandover = totalCollected - expenses;
-            const actualKegMoney = netHandover - expectedBottledSales + incomingOverflow;
+            const actualKegMoney = totalCollected - expectedBottledSales + incomingOverflow;
             const diff = actualKegMoney - expectedKegMoney;
             // The full diff (positive or negative) becomes the new carried balance
             const carryOverflow = diff;
@@ -277,38 +311,69 @@ router.post('/skip', async (req, res, next) => {
         }
         const { date, reason } = SkipDaySchema.parse(req.body);
         await (0, db_1.withTenant)(tenantId, async (client) => {
-            // 1. Check if previous day is resolved
-            const yesterdayStr = getYesterdayDateString(date);
-            const { rows: priorRows } = await client.query('SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date < $2 LIMIT 1', [tenantId, date]);
-            if (priorRows.length > 0) {
-                const { rows: yesterdayRows } = await client.query(`SELECT 1 FROM day_kegs 
-           WHERE tenant_id = $1 AND date = $2 
-             AND (closing IS NOT NULL OR skipped_reason IS NOT NULL)`, [tenantId, yesterdayStr]);
-                if (yesterdayRows.length === 0) {
-                    throw new Error(`Cannot skip ${date} because the previous day ${yesterdayStr} is not resolved.`);
-                }
-            }
+            // Disable newer day restriction and previous day resolved checks
+            // const { rows: newerRows } = await client.query('SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date > $2 LIMIT 1', [tenantId, date]);
+            // if (newerRows.length > 0) throw new Error(`Cannot skip ${date} because a newer day already exists.`);
+            // 1. Check if previous day is resolved (Disabled: skipping day restrictions are disabled)
+            // const yesterdayStr = getYesterdayDateString(date);
+            // const { rows: priorRows } = await client.query(
+            //   'SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date < $2 LIMIT 1',
+            //   [tenantId, date]
+            // );
+            // if (priorRows.length > 0) {
+            //   const { rows: yesterdayRows } = await client.query(
+            //     `SELECT 1 FROM day_kegs 
+            //      WHERE tenant_id = $1 AND date = $2 
+            //        AND (closing IS NOT NULL OR skipped_reason IS NOT NULL)`,
+            //     [tenantId, yesterdayStr]
+            //   );
+            //   if (yesterdayRows.length === 0) {
+            //     throw new Error(`Cannot skip ${date} because the previous day ${yesterdayStr} is not resolved.`);
+            //   }
+            // }
             // 2. Fetch carry-forward stock to preserve it during skipped day
-            const { rows: lastClosedDateRows } = await client.query(`SELECT date::text AS date FROM day_kegs 
-         WHERE tenant_id = $1 AND date < $2 AND closing IS NOT NULL AND (skipped_reason IS NULL OR skipped_reason = '')
-         ORDER BY date DESC LIMIT 1`, [tenantId, date]);
+            const { rows: priorProducts } = await client.query(`SELECT dp.date::text AS date, dp.product_id, dp.opening::float AS opening, dp.added::float AS added, dp.left_count::float AS left_count, dp.buy_price, dp.sell_price,
+                dk.skipped_reason
+         FROM day_products dp
+         LEFT JOIN day_kegs dk ON dp.tenant_id = dk.tenant_id AND dp.date = dk.date
+         WHERE dp.tenant_id = $1 AND dp.date < $2
+         ORDER BY dp.date ASC`, [tenantId, date]);
+            const yesterdayProductsMap = new Map();
+            for (const row of priorProducts) {
+                const pId = row.product_id;
+                let carryVal = yesterdayProductsMap.get(pId) || 0;
+                if (row.skipped_reason) {
+                    // remains unchanged
+                }
+                else if (row.left_count !== null && row.left_count !== undefined) {
+                    carryVal = Number(row.left_count);
+                }
+                else {
+                    carryVal = Number(row.opening || 0) + Number(row.added || 0);
+                }
+                yesterdayProductsMap.set(pId, carryVal);
+            }
+            const { rows: priorKegs } = await client.query(`SELECT date::text AS date, opening::float AS opening, added::float AS added, closing::float AS closing, buy_price, sell_price, skipped_reason
+         FROM day_kegs
+         WHERE tenant_id = $1 AND date < $2
+         ORDER BY date ASC`, [tenantId, date]);
             let carryKegOpening = 0;
             let carryKegBuyPrice = 0;
             let carryKegSellPrice = 0;
-            const yesterdayProductsMap = new Map();
-            if (lastClosedDateRows.length > 0) {
-                const lastClosedDate = lastClosedDateRows[0].date;
-                const { rows: yesterdayProducts } = await client.query('SELECT product_id, left_count::float AS left_count FROM day_products WHERE tenant_id = $1 AND date = $2', [tenantId, lastClosedDate]);
-                for (const yp of yesterdayProducts) {
-                    if (yp.left_count !== null)
-                        yesterdayProductsMap.set(yp.product_id, yp.left_count);
+            for (const row of priorKegs) {
+                if (row.skipped_reason) {
+                    // remains unchanged
                 }
-                const { rows: yesterdayKegRows } = await client.query('SELECT closing::float AS closing, buy_price, sell_price FROM day_kegs WHERE tenant_id = $1 AND date = $2', [tenantId, lastClosedDate]);
-                if (yesterdayKegRows.length > 0) {
-                    carryKegOpening = yesterdayKegRows[0].closing || 0;
-                    carryKegBuyPrice = yesterdayKegRows[0].buy_price || 0;
-                    carryKegSellPrice = yesterdayKegRows[0].sell_price || 0;
+                else if (row.closing !== null && row.closing !== undefined) {
+                    carryKegOpening = Number(row.closing);
                 }
+                else {
+                    carryKegOpening = Number(row.opening || 0) + Number(row.added || 0);
+                }
+                if (row.buy_price)
+                    carryKegBuyPrice = Number(row.buy_price);
+                if (row.sell_price)
+                    carryKegSellPrice = Number(row.sell_price);
             }
             // 3. Save skipped day products (preserve carry-forward)
             const { rows: products } = await client.query('SELECT id, buy_price, sell_price FROM products WHERE tenant_id = $1', [tenantId]);
@@ -374,6 +439,8 @@ router.post('/stock/product', async (req, res, next) => {
             return res.status(400).json({ error: 'x-tenant-id header is required' });
         const { date, product_id, opening, added, buy_price, sell_price } = SaveSingleProductStockSchema.parse(req.body);
         await (0, db_1.withTenant)(tenantId, async (client) => {
+            // const { rows: newerRows } = await client.query('SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date > $2 LIMIT 1', [tenantId, date]);
+            // if (newerRows.length > 0) throw new Error(`Cannot add stock for ${date} because a newer day already exists.`);
             await client.query(`INSERT INTO day_products (tenant_id, date, product_id, opening, added, left_count, buy_price, sell_price)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (tenant_id, date, product_id)
@@ -421,6 +488,8 @@ router.post('/stock/keg', async (req, res, next) => {
             return res.status(400).json({ error: 'x-tenant-id header is required' });
         const { date, opening, added, buy_price, sell_price } = SaveKegStockSchema.parse(req.body);
         await (0, db_1.withTenant)(tenantId, async (client) => {
+            // const { rows: newerRows } = await client.query('SELECT 1 FROM day_kegs WHERE tenant_id = $1 AND date > $2 LIMIT 1', [tenantId, date]);
+            // if (newerRows.length > 0) throw new Error(`Cannot add stock for ${date} because a newer day already exists.`);
             await client.query(`INSERT INTO day_kegs (tenant_id, date, opening, added, closing, buy_price, sell_price, total_money, overflow, expenses)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (tenant_id, date)

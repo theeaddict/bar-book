@@ -1,0 +1,36 @@
+
+> bar-book@1.0.0 dev
+> next dev
+
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+> [PWA] PWA support is disabled
+> [PWA] PWA support is disabled
+ ✓ Ready in 9.7s
+ ○ Compiling / ...
+ ✓ Compiled / in 18.4s (601 modules)
+ GET / 200 in 19470ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 14.5s (607 modules)
+ GET /login/ 200 in 15206ms
+ HEAD / 200 in 292ms
+ ○ Compiling /stock ...
+ ✓ Compiled /stock in 4.5s (616 modules)
+ ○ Compiling /balance ...
+ ✓ Compiled /balance in 4.4s (635 modules)
+ HEAD / 200 in 669ms
+ GET /login/ 200 in 219ms
+ GET /balance/?date=2026-06-16 200 in 192ms
+ ○ Compiling /reports ...
+ ✓ Compiled /reports in 4.1s (650 modules)
+ GET /?date=2026-06-17 200 in 463ms
+ GET /?date=2026-06-18 200 in 96ms
+ GET /?date=2026-06-19 200 in 130ms
+ GET /?date=2026-06-25 200 in 101ms
+ ○ Compiling /products ...
+ ✓ Compiled /products in 2.6s (648 modules)
+ GET /products/ 200 in 3362ms
+ GET / 200 in 79ms

@@ -71,7 +71,7 @@ async function getDailySummaryForDate(client, tenantId, date) {
             keg_profit = kegs_finished * (keg.sell_price - keg.buy_price);
             expected_keg_money = kegs_finished * keg.sell_price;
             total_collected = keg.total_money || (bottled_sales + keg_sales);
-            actual_keg_money = (total_collected - expenses) - bottled_sales;
+            actual_keg_money = total_collected - bottled_sales;
             keg_diff = actual_keg_money - expected_keg_money;
         }
     }
@@ -173,7 +173,7 @@ async function getSummariesForDateRange(client, tenantId, dates) {
                 keg_profit = kegs_finished * (dayKeg.sell_price - dayKeg.buy_price);
                 expected_keg_money = kegs_finished * dayKeg.sell_price;
                 total_collected = dayKeg.total_money || (bottled_sales + keg_sales);
-                actual_keg_money = (total_collected - expenses) - bottled_sales;
+                actual_keg_money = total_collected - bottled_sales;
                 keg_diff = actual_keg_money - expected_keg_money;
             }
         }

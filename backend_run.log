@@ -1,0 +1,10 @@
+
+> bar-book-backend@1.0.0 prestart
+> kill $(lsof -t -i:5000) 2>/dev/null; exit 0
+
+
+> bar-book-backend@1.0.0 start
+> node dist/index.js
+
+Server is running on port 5000
+Terminated
